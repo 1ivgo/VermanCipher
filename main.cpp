@@ -20,7 +20,8 @@ struct CryptParams
     size_t size;
     unsigned char* key;
     unsigned char* outText;
-    size_t indexOfMas;
+    size_t downIndex;
+    size_t topIndex;
 };
 
 struct KeygenParams
@@ -84,16 +85,22 @@ int main(int argc, char *argv[])
         cryptParams->msg = msg;
         cryptParams->size = size;
         cryptParams->outText = outText;
-
-        if(i == 9)
+        if(i == 0)
         {
-            cryptParams->indexOfMas = size;
+            cryptParams->downIndex = 0;
         }
         else
         {
-            cryptParams->indexOfMas = size / 10 * i;
+            cryptParams->downIndex = size / 10 * i;
         }
-
+        if(i == 9)
+        {
+            cryptParams->topIndex = size;
+        }
+        else
+        {
+            cryptParams->topIndex = size / 10 * (i + 1);
+        }
         pthread_create(&thread[i], NULL, crypt, cryptParams);
     }
     status = pthread_barrier_wait(&barrier);
@@ -141,20 +148,23 @@ void* keygen(void * keygenParams)
 void* crypt(void * cryptParams)
 {
     int status = 0;
-
+    
     CryptParams* cryptPar = (CryptParams*)cryptParams;
     unsigned char* msg = cryptPar->msg;
     unsigned char* key = cryptPar->key;
     unsigned char* outText = cryptPar->outText;
-    size_t indexOfMas = cryptPar->indexOfMas;
+    size_t topIndex = cryptPar->topIndex;
+    size_t downIndex = cryptPar->downIndex;
+    
+    cout << cryptPar->downIndex << "\t" << cryptPar->topIndex << endl;
 
-    for (size_t i = 0; i < indexOfMas; i++)
+    while (downIndex < topIndex)
     {
-        outText[i] = key[i] ^ msg[i];
+        outText[downIndex] = key[downIndex] ^ msg[downIndex];
+        downIndex++;
     }
 
     cryptPar->outText = outText;
-    cryptPar->indexOfMas = indexOfMas;
 
     delete(cryptPar);
 
