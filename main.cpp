@@ -20,7 +20,6 @@ struct CryptParams
     size_t size;
     unsigned char* key;
     unsigned char* outText;
-    size_t indexOfThread;
     size_t indexOfMas;
 };
 
@@ -30,20 +29,21 @@ struct KeygenParams
     size_t m;
     size_t c;
     unsigned char seed;
-    unsigned char* key;
     size_t keyLenght;
 };
 
 void* keygen(void*);
 void* crypt(void*);
 void errorExit(const char*);
-void readText(CryptParams*, char*);
+unsigned char* readText(KeygenParams*, char*);
 
-int main(int argc, char *argv[]) {
-
+int main(int argc, char *argv[])
+{
     int status = 0;
     pthread_t keyGenThread;
     pthread_t thread[10];
+    int inFile, outFile = 0;
+    int size = 0;
 
     KeygenParams keygenParams;
     keygenParams.a = 5;
@@ -51,26 +51,50 @@ int main(int argc, char *argv[]) {
     keygenParams.c = 3;
     keygenParams.seed = 0;
 
-	CryptParams cryptParams;
-    cryptParams.indexOfThread = 0;
+    inFile = open(argv[1], O_RDONLY, 0666);
+    if (inFile == -1)
+        errorExit("Open() error");
 
-    readText(&cryptParams, argv[1]);
-    keygenParams.key = new unsigned char[cryptParams.size];
-	keygenParams.keyLenght = cryptParams.size;
-    
+    size = lseek(inFile, 0, SEEK_END);
+    if(size == -1)
+        errorExit("lseek() error");
+
+    unsigned char* msg = new unsigned char[size];
+    unsigned char* key = new unsigned char[size];
+    unsigned char* outText = new unsigned char[size];
+
+    if(lseek(inFile, 0, SEEK_SET) == -1)
+		errorExit("lseek() error");
+    size = read(inFile, msg, size);
+	if(size == -1)
+		errorExit("read() error");
+
     if(pthread_create(&keyGenThread, NULL, keygen, &keygenParams) != 0)
         errorExit("pthread_create() error");
-    if(pthread_join(keyGenThread, NULL) != 0)
+    if(pthread_join(keyGenThread, (void**)&key) != 0)
         errorExit("pthread_join() error");
-
-    cryptParams.key = keygenParams.key;
 
     status = pthread_barrier_init(&barrier, NULL, NUM_THREAD);
     if(status != 0)
         errorExit("pthread_barrier_init() error");
     for(int i=0; i<10; i++)
     {
-        pthread_create(&thread[i], NULL, crypt, &cryptParams);
+        CryptParams* cryptParams = new CryptParams;
+        cryptParams->key = key;
+        cryptParams->msg = msg;
+        cryptParams->size = size;
+        cryptParams->outText = outText;
+
+        if(i == 9)
+        {
+            cryptParams->indexOfMas = size;
+        }
+        else
+        {
+            cryptParams->indexOfMas = size / 10 * i;
+        }
+
+        pthread_create(&thread[i], NULL, crypt, cryptParams);
     }
     status = pthread_barrier_wait(&barrier);
     if(status == PTHREAD_BARRIER_SERIAL_THREAD)
@@ -79,14 +103,17 @@ int main(int argc, char *argv[]) {
         errorExit("pthread_barrier_destroy() error");
 
 
-	int fd = open(argv[2], O_WRONLY | O_CREAT, 0666);
-    if (fd == -1)
+	outFile = open(argv[2], O_WRONLY | O_CREAT, 0666);
+    if (outFile == -1)
         errorExit("Open() error");
-	size_t test = write(fd, cryptParams.outText, cryptParams.size);
+	write(outFile, outText, size);
 
-    delete (keygenParams.key);
-    delete (cryptParams.msg);
-    delete (cryptParams.outText);
+    delete[] key;
+    delete[] msg;
+    delete[] outText;
+
+    close(inFile);
+    close(outFile);
 
     return EXIT_SUCCESS;
 }
@@ -97,9 +124,9 @@ void* keygen(void * keygenParams)
     size_t a = kp->a;
     size_t m = kp->m;
     size_t c = kp->c;
-    unsigned char* key = kp->key;
     size_t keyLenght = kp->keyLenght;
 
+    unsigned char* key = new unsigned char[keyLenght];    
     unsigned char Xprev = kp->seed;
 
     for (size_t i = 0; i < keyLenght; i++)
@@ -108,7 +135,7 @@ void* keygen(void * keygenParams)
         Xprev = key[i];
     }
 
-    pthread_exit(0);
+    return key;
 }
 
 void* crypt(void * cryptParams)
@@ -119,21 +146,8 @@ void* crypt(void * cryptParams)
     unsigned char* msg = cryptPar->msg;
     unsigned char* key = cryptPar->key;
     unsigned char* outText = cryptPar->outText;
-    size_t size = cryptPar->size;
-    size_t indexOfThread = cryptPar->indexOfThread;
     size_t indexOfMas = cryptPar->indexOfMas;
 
-    indexOfThread++;
-    cryptPar->indexOfThread = indexOfThread;
-
-    if(indexOfThread == 10)
-    {
-        indexOfMas = size;
-    }
-    else
-    {
-        indexOfMas = size/10 * indexOfThread;
-    }
     for (size_t i = 0; i < indexOfMas; i++)
     {
         outText[i] = key[i] ^ msg[i];
@@ -141,6 +155,8 @@ void* crypt(void * cryptParams)
 
     cryptPar->outText = outText;
     cryptPar->indexOfMas = indexOfMas;
+
+    delete(cryptPar);
 
     status = pthread_barrier_wait(&barrier);
     if(status == PTHREAD_BARRIER_SERIAL_THREAD)
@@ -153,29 +169,4 @@ void errorExit(const char* error)
 {
     perror(error);
     exit(0);
-}
-
-void readText(CryptParams *cryptParams, char* fileName)
-{
-    int fd = 0;
-    int size = 0;
-
-    fd = open(fileName, O_RDONLY, 0666);
-    if (fd == -1)
-        errorExit("Open() error");
-
-    size = lseek(fd, 0, SEEK_END);
-    if(size == -1)
-        errorExit("lseek() error");
-
-    cryptParams->size = size;
-    cryptParams->msg = new unsigned char[size];
-    cryptParams->key = new unsigned char[size];
-    cryptParams->outText = new unsigned char[size];
-
-    if(lseek(fd, 0, SEEK_SET) == -1)
-		errorExit("lseek() error");
-    size = read(fd, cryptParams->msg, size);
-	if(size == -1)
-		errorExit("read() error");
 }
