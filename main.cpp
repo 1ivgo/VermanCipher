@@ -109,7 +109,6 @@ int main(int argc, char *argv[])
     else if(status != 0)
         errorExit("pthread_barrier_destroy() error");
 
-
 	outFile = open(argv[2], O_WRONLY | O_CREAT, 0666);
     if (outFile == -1)
         errorExit("Open() error");
@@ -155,8 +154,6 @@ void* crypt(void * cryptParams)
     unsigned char* outText = cryptPar->outText;
     size_t topIndex = cryptPar->topIndex;
     size_t downIndex = cryptPar->downIndex;
-    
-    cout << cryptPar->downIndex << "\t" << cryptPar->topIndex << endl;
 
     while (downIndex < topIndex)
     {

@@ -11,3 +11,4 @@ check:
 clean:
 	rm crypt.txt 
 	rm encrypt.txt
+	rm main.out
